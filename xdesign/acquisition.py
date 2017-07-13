@@ -693,12 +693,13 @@ class Simulator(object):
         -----------
         type : str
             Type of wavefront to be initialized. Valid options:
-            'plane', 'spot', 'point_projection_lens'
+            'plane', 'spot', 'point_projection_lens', 'spherical'
         kwargs :
             Options specific to the selection of type.
             'plane': no option
             'spot': 'width'
             'point_projection_lens': 'focal_length', 'lens_sample_dist'
+            'spherical': 'dist_to_source'
         """
         wave_shape = np.asarray(self.wavefront.shape)
         if type == 'plane':
@@ -712,11 +713,22 @@ class Simulator(object):
             elif self._ndim == 3:
                 center = np.array(wave_shape / 2, dtype=int)
                 self.wavefront[center[0]-radius:center[0]-radius+wid, center[1]-radius:center[1]-radius+wid] = 1.
+        elif type == 'spherical':
+            z = kwargs['dist_to_source']
+            xx = self.mesh[0][:, :, 0]
+            yy = self.mesh[1][:, :, 0]
+            xx -= xx[0, -1] / 2
+            yy -= yy[-1, 0] / 2
+            print(xx, yy, z)
+            r = np.sqrt(xx ** 2 + yy ** 2 + z ** 2)
+            self.wavefront = np.exp(-1j * 2 * np.pi * r / self.lmbda_nm)
         elif type == 'point_projection_lens':
             f = kwargs['focal_length']
             s = kwargs['lens_sample_dist']
             xx = self.mesh[0][:, :, 0]
             yy = self.mesh[1][:, :, 0]
+            xx -= xx[0, -1] / 2
+            yy -= yy[-1, 0] / 2
             r = np.sqrt(xx ** 2 + yy ** 2)
             theta = np.arctan(r / (s - f))
             path = np.mod(s / np.cos(theta), self.lmbda_nm)
@@ -734,6 +746,9 @@ class Simulator(object):
             Distance between sample exiting plane and detector plane. Unit is cm.
         """
         n_slice = self.grid_delta.shape[-1]
+
+        s = []
+
         for i_slice in range(n_slice):
             print('Slice: {:d}'.format(i_slice))
             sys.stdout.flush()
@@ -741,10 +756,15 @@ class Simulator(object):
             beta_slice = self.grid_beta[:, :, i_slice]
             self.wavefront = slice_modify(self, delta_slice, beta_slice, self.wavefront)
             self.wavefront = slice_propagate(self, self.wavefront)
+
+            s.append(np.abs(self.wavefront))
+
+        dxchange.write_tiff(np.asarray(s), 'slice_animation_sphwave', dtype='float32', overwrite=True)
+
         if free_prop_dist is not None:
             logger.debug('Free propagation')
-            # self.wavefront = free_propagate(self, self.wavefront, free_prop_dist)
-            self.wavefront = far_propagate(self, self.wavefront, free_prop_dist)
+            self.wavefront = free_propagate(self, self.wavefront, free_prop_dist)
+            # self.wavefront = far_propagate(self, self.wavefront, free_prop_dist)
         return self.wavefront
 
     def rotate(self, theta, axes=(0, 2)):
