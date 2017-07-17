@@ -642,6 +642,7 @@ class Simulator(object):
                 self.grid_delta = self.grid_beta = None
             self.energy_kev = energy * 1.e-3
             self.voxel_nm = np.array(psize) * 1.e7
+            self.mean_voxel_nm = np.prod(self.voxel_nm)**(1. / 3)
             self._ndim = self.grid_delta.ndim
             self.size = self.grid_delta.shape
             self.lmbda_nm = 1.24 / self.energy_kev
@@ -759,14 +760,14 @@ class Simulator(object):
             self.wavefront = slice_modify(self, delta_slice, beta_slice, self.wavefront)
             self.wavefront = slice_propagate(self, self.wavefront)
 
-            s.append(np.abs(self.wavefront))
-
-        dxchange.write_tiff(np.asarray(s), 'slice_animation_sphwave', dtype='float32', overwrite=True)
+            # s.append(np.abs(self.wavefront))
+        #
+        # dxchange.write_tiff(np.asarray(s), 'slice_animation_sphwave', dtype='float32', overwrite=True)
 
         if free_prop_dist is not None:
             logger.debug('Free propagation')
-            self.wavefront = free_propagate(self, self.wavefront, free_prop_dist)
-            # self.wavefront = far_propagate(self, self.wavefront, free_prop_dist)
+            # self.wavefront = free_propagate(self, self.wavefront, free_prop_dist)
+            self.wavefront = far_propagate(self, self.wavefront, free_prop_dist)
         return self.wavefront
 
     def rotate(self, theta, axes=(0, 2)):

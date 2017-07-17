@@ -52,6 +52,7 @@ from __future__ import (absolute_import, division, print_function,
 import numpy as np
 import logging
 import warnings
+import operator
 from xdesign.util import gen_mesh
 from xdesign.constants import PI
 from numpy.fft import fft2, fftn, ifftn, fftshift, ifftshift
@@ -94,8 +95,39 @@ def slice_propagate(simulator, wavefront):
     return wavefront
 
 
-def free_propagate(simulator, wavefront, dist):
+def free_propagate(simulator, wavefront, dist, algorithm=None):
     """Free space propagation using convolutional algorithm.
+
+    Parameters:
+    -----------
+    simulator : :class:`acquisition.Simulator`
+        The Simulator object.
+    wavefront : ndarray
+        The wavefront array.
+    dist : float
+        Propagation distance in cm.
+    algorithm : str
+        Force using the specified algorithm.
+        Use 'TF' for transfer function, 'IR' for impulse response. 
+    """
+    dist_nm = dist * 1e7
+    lmbda_nm = simulator.lmbda_nm
+    if algorithm is None:
+        l = simulator.mean_voxel_nm * np.prod(simulator.size)**(1. / 3)
+        crit_samp = lmbda_nm * dist_nm / l
+        print(crit_samp)
+        algorithm = 'TF' if simulator.mean_voxel_nm > crit_samp else 'IR'
+    if algorithm == 'TF':
+        return propagate_tf(simulator, wavefront, dist)
+    elif algorithm == 'IR':
+        return propagate_ir(simulator, wavefront, dist)
+    else:
+        raise ValueError('Invalid algorithm.')
+
+
+def propagate_tf(simulator, wavefront, dist):
+
+    """Free space propagation using the transfer function algorithm.
 
     Parameters:
     -----------
@@ -114,6 +146,35 @@ def free_propagate(simulator, wavefront, dist):
     u, v = gen_mesh([v_max, u_max], simulator.grid_delta.shape[1:3])
     H = np.exp(1j * k * dist_nm * np.sqrt(1 - lmbda_nm**2 * (u**2 - v**2)))
     wavefront = ifftn(ifftshift(fftshift(fftn(wavefront)) * H))
+
+    return wavefront
+
+
+def propagate_ir(simulator, wavefront, dist):
+
+    """Free space propagation using the impulse response algorithm.
+
+    Parameters:
+    -----------
+    simulator : :class:`acquisition.Simulator`
+        The Simulator object.
+    wavefront : ndarray
+        The wavefront array.
+    dist : float
+        Propagation distance in cm.
+    """
+    dist_nm = dist * 1e7
+    lmbda_nm = simulator.lmbda_nm
+    k = 2 * PI / lmbda_nm
+    xmin, ymin = map(int, np.array(simulator.size) / -2.)[:2]
+    dx, dy = simulator.voxel_nm[0:2]
+    x = np.arange(xmin, xmin + dx * simulator.size[0], dx)
+    y = np.arange(ymin, ymin + dy * simulator.size[1], dy)
+    x, y = np.meshgrid(x, y)
+    h = np.exp(1j * k * dist_nm) / (1j * lmbda_nm * dist_nm) * np.exp(1j * k / (2 * dist_nm) * (x**2 + y**2))
+    H = fft2(fftshift(h)) * simulator.voxel_nm[0] * simulator.voxel_nm[1]
+    wavefront = fft2(fftshift(wavefront))
+    wavefront = ifftshift(ifftn(wavefront * H))
 
     return wavefront
 
@@ -145,23 +206,12 @@ def far_propagate(simulator, wavefront, dist):
     y2 = lmbda_nm * v * dist_nm
     q1 = np.exp(-1j * k * (x ** 2 + y ** 2) / (2 * dist_nm))
     q2 = np.exp(-1j * k * (x2 ** 2 + y2 ** 2) / (2 * dist_nm))
-    # wavefront *= ifftshift(fft2(fftshift(wavefront * q1)))
-    # wavefront *= np.exp(-1j * k * dist_nm) / (-1 * k * dist_nm) * q2
+    wavefront *= fftn(fftshift(wavefront * q1))
+    wavefront *= np.exp(-1j * k * dist_nm) / (-1 * k * dist_nm) * q2
+    #
+    # h = np.exp(2j * np.pi * dist_nm / lmbda_nm) * np.exp(-1j * lmbda_nm * dist_nm * (u ** 2 + v ** 2))
+    # wavefront = ifftshift(ifftn(fft2(fftshift(wavefront)) * h))
 
-    wavefront = fftshift(fft2(wavefront))
-
-
-    # h = np.exp(-1j * PI * (x ** 2 + y ** 2) / (lmbda_nm * dist_nm))
-    # wavefront = fftshift(fft2(wavefront * h))
-    # wavefront = wavefront * np.exp(-1j * PI * lmbda_nm * dist_nm * (u ** 2 + v ** 2))
-    # wavefront = wavefront * 1j / (lmbda_nm * dist_nm)
-
-    # y0 = grid.yy[0, :, :]
-    # x0 = grid.xx[0, :, :]
-    # y = y0 * (lmda * z) * (grid.size[1] * grid.voxel_nm_y) ** 2
-    # x = x0 * (lmda * z) * (grid.size[0] * grid.voxel_nm_x) ** 2
-    # wavefront = fftshift(fftn(wavefront * np.exp(-1j * 2 * PI / lmda * np.sqrt(z ** 2 + x0 ** 2 + y0 ** 2))))
-    # wavefront = wavefront * np.exp(-1j * 2 * PI / lmda * np.sqrt(z ** 2 + x ** 2 + y ** 2))
     return wavefront
 
 
