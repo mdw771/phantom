@@ -95,7 +95,8 @@ __all__ = ['Probe',
            'calculate_gram',
            'sinogram',
            'raster_scan',
-           'raster_scan3D']
+           'raster_scan3D',
+           'Simulator']
 
 
 class Probe(Line, pt.Polytope):

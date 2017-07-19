@@ -146,6 +146,21 @@ def get_kernel(simulator, dist):
         return get_kernel_ir(simulator, dist)
 
 
+def get_kernel_tf_real(simulator, dist):
+
+    dist_nm = dist * 1e7
+    lmbda_nm = simulator.lmbda_nm
+    k = 2 * PI / lmbda_nm
+    xmin, ymin = np.array(simulator.size_nm)[:2] / -2.
+    dx, dy = simulator.voxel_nm[0:2]
+    x = np.arange(xmin, xmin + simulator.size_nm[0], dx)
+    y = np.arange(ymin, ymin + simulator.size_nm[1], dy)
+    x, y = np.meshgrid(x, y)
+    h = np.exp(1j * k * dist_nm) / (1j * lmbda_nm * dist_nm) * np.exp(1j * k / (2 * dist_nm) * (x ** 2 + y ** 2))
+
+    return h
+
+
 def get_kernel_tf(simulator, dist):
     """Get Fresnel propagation kernel for TF algorithm.
 
@@ -281,7 +296,7 @@ def far_propagate(simulator, wavefront, dist, pad=None):
     # wavefront = np.pad(wavefront, pad_width=512, mode='constant', constant_values=0)
     wavefront = fftshift(fft2(fftshift(wavefront)))
     # wavefront = wavefront[512:1024, 512:1024]
-    wavefront = 1 / (1j * lmbda_nm * dist_nm) \
+    wavefront = np.exp(1j * k * dist_nm) / (1j * lmbda_nm * dist_nm) \
                 * np.exp(1j * k / (2 * dist_nm) * (u**2 + v**2)) \
                 * wavefront \
                 * dx * dy
