@@ -600,7 +600,7 @@ def tomography_3d(simulator, ang_start, ang_end, ang_step=None, n_ang=None, free
         raise ValueError('One of angular step or number of angles should be specified.')
     f = h5py.File(fname)
     xchng = f.create_group('exchange')
-    dset = xchng.create_dataset('data', (n_ang, simulator.size[1], simulator.size[2]), dtype='float32')
+    dset = xchng.create_dataset('data', (n_ang, simulator.shape[1], simulator.shape[2]), dtype='float32')
     for theta, i in izip(angles, range(n_ang)):
         print('\rNow at angle ', str(theta), end='')
         exiting = simulator.multislice_propagate(free_prop_dist=free_prop_dist)
@@ -610,9 +610,9 @@ def tomography_3d(simulator, ang_start, ang_end, ang_step=None, n_ang=None, free
                                      energy=simulator.energy_kev, dist=free_prop_dist, alpha=alpha)
         dset[i, :, :] = exiting
         simulator.rotate(ang_step)
-    dset = xchng.create_dataset('data_white', (1, simulator.size[1], simulator.size[2]))
+    dset = xchng.create_dataset('data_white', (1, simulator.shape[1], simulator.shape[2]))
     dset[:, :, :] = np.ones(dset.shape)
-    dset = xchng.create_dataset('data_dark', (1, simulator.size[1], simulator.size[2]))
+    dset = xchng.create_dataset('data_dark', (1, simulator.shape[1], simulator.shape[2]))
     dset[:, :, :] = np.zeros(dset.shape)
     f.close()
 
@@ -644,12 +644,13 @@ class Simulator(object):
             self.voxel_nm = np.array(psize) * 1.e7
             self.mean_voxel_nm = np.prod(self.voxel_nm)**(1. / 3)
             self._ndim = self.grid_delta.ndim
-            self.size = self.grid_delta.shape
+            self.size_nm = self.grid_delta.shape * self.voxel_nm
+            self.shape = self.grid_delta.shape
             self.lmbda_nm = 1.24 / self.energy_kev
             self.mesh = []
             temp = []
             for i in range(self._ndim):
-                temp.append(np.arange(self.size[i]) * self.voxel_nm[i])
+                temp.append(np.arange(self.shape[i]) * self.voxel_nm[i])
             self.mesh = np.meshgrid(*temp, indexing='xy')
 
             # wavefront in x-y plane or x edge
@@ -662,7 +663,7 @@ class Simulator(object):
             os.makedirs(save_path)
         np.save(os.path.join(save_path, 'grid_delta'), self.grid_delta)
         np.save(os.path.join(save_path, 'grid_beta'), self.grid_beta)
-        grid_pars = [self.size, self.voxel_nm, self.energy_kev * 1.e3]
+        grid_pars = [self.shape, self.voxel_nm, self.energy_kev * 1.e3]
         np.save(os.path.join(save_path, 'grid_pars'), grid_pars)
 
     def read_grid(self, save_path='data/sav/grid'):
@@ -750,15 +751,25 @@ class Simulator(object):
         """
         n_slice = self.grid_delta.shape[-1]
 
-        s = []
-
+        delta_nm = self.voxel_nm[-1]
+        kernel = get_kernel(self, self.wavefront, delta_nm * 1.e-7)
         for i_slice in range(n_slice):
             print('Slice: {:d}'.format(i_slice))
             sys.stdout.flush()
             delta_slice = self.grid_delta[:, :, i_slice]
             beta_slice = self.grid_beta[:, :, i_slice]
             self.wavefront = slice_modify(self, delta_slice, beta_slice, self.wavefront)
-            self.wavefront = slice_propagate(self, self.wavefront)
+            self.wavefront = slice_propagate(self, self.wavefront, kernel=kernel)
+
+        # slice_ls = range(n_slice)
+        # np.random.shuffle(slice_ls)
+        # for i_slice in slice_ls:
+        #     print('Slice: {:d}'.format(i_slice))
+        #     sys.stdout.flush()
+        #     delta_slice = self.grid_delta[:, :, i_slice]
+        #     beta_slice = self.grid_beta[:, :, i_slice]
+        #     self.wavefront = slice_modify(self, delta_slice, beta_slice, self.wavefront)
+        #     self.wavefront = slice_propagate(self, self.wavefront)
 
             # s.append(np.abs(self.wavefront))
         #

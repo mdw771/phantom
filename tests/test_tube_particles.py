@@ -3,6 +3,7 @@ from __future__ import print_function
 import numpy as np
 import matplotlib.pyplot as plt
 import dxchange
+import time
 
 from xdesign.material import XraylibMaterial, CustomMaterial
 from xdesign.geometry import *
@@ -13,6 +14,7 @@ from xdesign.acquisition import Simulator
 
 
 def test_model_prop_pipeline():
+
     n_particles = 5
     top_y = 25.e-7
     top_radius = 10.e-7
@@ -79,7 +81,9 @@ def test_model_prop_pipeline():
                     psize=[1.e-7, 1.e-7, 1.e-7])
 
     sim.initialize_wavefront('plane')
+    t0 = time.time()
     wavefront = sim.multislice_propagate()
+    print('Propagation time: {} ms'.format((time.time() - t0) * 1000))
 
     plt.imshow(np.abs(wavefront))
 

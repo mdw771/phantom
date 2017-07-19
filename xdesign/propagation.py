@@ -65,7 +65,8 @@ __docformat__ = 'restructuredtext en'
 __all__ = ['free_propagate',
            'far_propagate',
            'slice_modify',
-           'slice_propagate']
+           'slice_propagate',
+           'get_kernel']
 
 
 def slice_modify(simulator, delta_slice, beta_slice, wavefront):
@@ -88,14 +89,14 @@ def slice_modify(simulator, delta_slice, beta_slice, wavefront):
     return wavefront
 
 
-def slice_propagate(simulator, wavefront):
+def slice_propagate(simulator, wavefront, kernel=None):
     """"""
     delta_nm = simulator.voxel_nm[-1]
-    wavefront = free_propagate(simulator, wavefront, delta_nm * 1e-7)
+    wavefront = free_propagate(simulator, wavefront, delta_nm * 1e-7, kernel=kernel)
     return wavefront
 
 
-def free_propagate(simulator, wavefront, dist, algorithm=None):
+def free_propagate(simulator, wavefront, dist, algorithm=None, kernel=None):
     """Free space propagation using convolutional algorithm.
 
     Parameters:
@@ -113,19 +114,55 @@ def free_propagate(simulator, wavefront, dist, algorithm=None):
     dist_nm = dist * 1e7
     lmbda_nm = simulator.lmbda_nm
     if algorithm is None:
-        l = simulator.mean_voxel_nm * np.prod(simulator.size)**(1. / 3)
+        l = np.prod(simulator.size_nm)**(1. / 3)
         crit_samp = lmbda_nm * dist_nm / l
-        print(crit_samp)
         algorithm = 'TF' if simulator.mean_voxel_nm > crit_samp else 'IR'
     if algorithm == 'TF':
-        return propagate_tf(simulator, wavefront, dist)
+        return propagate_tf(simulator, wavefront, dist, kernel=kernel)
     elif algorithm == 'IR':
-        return propagate_ir(simulator, wavefront, dist)
+        return propagate_ir(simulator, wavefront, dist, kernel=kernel)
     else:
         raise ValueError('Invalid algorithm.')
 
 
-def propagate_tf(simulator, wavefront, dist):
+def get_kernel(simulator, wavefront, dist):
+    """
+    Get Fresnel propagation kernel. Automatically judge whether to return IR or TF kernel.
+    
+    Parameters:
+    -----------
+    simulator : :class:`acquisition.Simulator`
+        The Simulator object.
+    wavefront : ndarray
+        The wavefront array.
+    dist : float
+        Propagation distance in cm.
+    """
+
+    dist_nm = dist * 1e7
+    lmbda_nm = simulator.lmbda_nm
+    l = np.prod(simulator.size_nm)**(1. / 3)
+    crit_samp = lmbda_nm * dist_nm / l
+    if simulator.mean_voxel_nm > crit_samp:
+        return get_kernel_tf(simulator, wavefront, dist)
+    else:
+        return get_kernel_tf(simulator, wavefront, dist)
+
+
+def get_kernel_tf(simulator, wavefront, dist):
+
+    dist_nm = dist * 1e7
+    lmbda_nm = simulator.lmbda_nm
+    k = 2 * PI / lmbda_nm
+    u_max = 1. / (2. * simulator.voxel_nm[0])
+    v_max = 1. / (2. * simulator.voxel_nm[1])
+    u, v = gen_mesh([v_max, u_max], simulator.grid_delta.shape[1:3])
+    H = np.exp(1j * k * dist_nm * np.sqrt(1 - lmbda_nm**2 * (u**2 - v**2)))
+
+    return H
+
+
+def propagate_tf(simulator, wavefront, dist, kernel=None):
 
     """Free space propagation using the transfer function algorithm.
 
@@ -137,20 +174,35 @@ def propagate_tf(simulator, wavefront, dist):
         The wavefront array.
     dist : float
         Propagation distance in cm.
+    kernel : np.ndarray
+        Fresnel propagator.
     """
-    dist_nm = dist * 1e7
-    lmbda_nm = simulator.lmbda_nm
-    k = 2 * PI / lmbda_nm
-    u_max = 1. / (2. * simulator.voxel_nm[0])
-    v_max = 1. / (2. * simulator.voxel_nm[1])
-    u, v = gen_mesh([v_max, u_max], simulator.grid_delta.shape[1:3])
-    H = np.exp(1j * k * dist_nm * np.sqrt(1 - lmbda_nm**2 * (u**2 - v**2)))
+    if kernel is not None:
+        H = kernel
+    else:
+        H = get_kernel_tf(simulator, wavefront, dist)
     wavefront = ifftn(ifftshift(fftshift(fftn(wavefront)) * H))
 
     return wavefront
 
 
-def propagate_ir(simulator, wavefront, dist):
+def get_kernel_ir(simulator, wavefront, dist):
+
+    dist_nm = dist * 1e7
+    lmbda_nm = simulator.lmbda_nm
+    k = 2 * PI / lmbda_nm
+    xmin, ymin = np.array(simulator.size_nm)[:2] / -2.
+    dx, dy = simulator.voxel_nm[0:2]
+    x = np.arange(xmin, xmin + simulator.size_nm[0], dx)
+    y = np.arange(ymin, ymin + simulator.size_nm[1], dy)
+    x, y = np.meshgrid(x, y)
+    h = np.exp(1j * k * dist_nm) / (1j * lmbda_nm * dist_nm) * np.exp(1j * k / (2 * dist_nm) * (x**2 + y**2))
+    H = fft2(fftshift(h)) * simulator.voxel_nm[0] * simulator.voxel_nm[1]
+
+    return H
+
+
+def propagate_ir(simulator, wavefront, dist, kernel=None):
 
     """Free space propagation using the impulse response algorithm.
 
@@ -163,23 +215,17 @@ def propagate_ir(simulator, wavefront, dist):
     dist : float
         Propagation distance in cm.
     """
-    dist_nm = dist * 1e7
-    lmbda_nm = simulator.lmbda_nm
-    k = 2 * PI / lmbda_nm
-    xmin, ymin = map(int, np.array(simulator.size) / -2.)[:2]
-    dx, dy = simulator.voxel_nm[0:2]
-    x = np.arange(xmin, xmin + dx * simulator.size[0], dx)
-    y = np.arange(ymin, ymin + dy * simulator.size[1], dy)
-    x, y = np.meshgrid(x, y)
-    h = np.exp(1j * k * dist_nm) / (1j * lmbda_nm * dist_nm) * np.exp(1j * k / (2 * dist_nm) * (x**2 + y**2))
-    H = fft2(fftshift(h)) * simulator.voxel_nm[0] * simulator.voxel_nm[1]
+    if kernel is not None:
+        H = kernel
+    else:
+        H = get_kernel_ir(simulator, wavefront, dist)
     wavefront = fft2(fftshift(wavefront))
     wavefront = ifftshift(ifftn(wavefront * H))
 
     return wavefront
 
 
-def far_propagate(simulator, wavefront, dist):
+def far_propagate(simulator, wavefront, dist, pad=None):
     """Free space propagation using product Fourier algorithm. Suitable for far
     field propagation.
 
@@ -196,21 +242,36 @@ def far_propagate(simulator, wavefront, dist):
     warnings.warn('This function is still under construction.')
     lmbda_nm = simulator.lmbda_nm
     k = 2 * PI / lmbda_nm
-    u_max = 1. / (2. * simulator.voxel_nm[0])
-    v_max = 1. / (2. * simulator.voxel_nm[0])
-    u, v = gen_mesh([v_max, u_max], simulator.grid_delta.shape[:2])
-    x = simulator.mesh[0][:, :, 0] * simulator.voxel_nm[0]
-    y = simulator.mesh[1][:, :, 0] * simulator.voxel_nm[1]
 
-    x2 = lmbda_nm * u * dist_nm
-    y2 = lmbda_nm * v * dist_nm
-    q1 = np.exp(-1j * k * (x ** 2 + y ** 2) / (2 * dist_nm))
-    q2 = np.exp(-1j * k * (x2 ** 2 + y2 ** 2) / (2 * dist_nm))
-    wavefront *= fftn(fftshift(wavefront * q1))
-    wavefront *= np.exp(-1j * k * dist_nm) / (-1 * k * dist_nm) * q2
-    #
-    # h = np.exp(2j * np.pi * dist_nm / lmbda_nm) * np.exp(-1j * lmbda_nm * dist_nm * (u ** 2 + v ** 2))
-    # wavefront = ifftshift(ifftn(fft2(fftshift(wavefront)) * h))
+    if pad is not None:
+        wavefront = np.pad(wavefront, pad, mode='edge')
+        size_nm = np.array(wavefront.shape[:2]) * simulator.voxel_nm[:2]
+    else:
+        size_nm = simulator.size_nm
+
+    xmin, ymin = size_nm[:2] / -2.
+    dx, dy = simulator.voxel_nm[0:2]
+    x = np.arange(xmin, xmin + size_nm[0], dx)
+    y = np.arange(ymin, ymin + size_nm[1], dy)
+    x, y = np.meshgrid(x, y)
+    print(x)
+
+    umin, vmin = lmbda_nm * dist_nm / (-2. * (simulator.size_nm[:2] / np.array(wavefront.shape)))
+    du, dv = lmbda_nm * dist_nm / simulator.size_nm[:2]
+    u = np.arange(umin, -umin, du)
+    v = np.arange(vmin, -vmin, dv)
+    print(u.shape)
+    u, v = np.meshgrid(u, v)
+    print(u.shape, u)
+
+    wavefront = wavefront * np.exp(1j * k / (2 * dist_nm) * (x**2 + y**2))
+    # wavefront = np.pad(wavefront, pad_width=512, mode='constant', constant_values=0)
+    wavefront = fftshift(fft2(fftshift(wavefront)))
+    # wavefront = wavefront[512:1024, 512:1024]
+    wavefront = 1 / (1j * lmbda_nm * dist_nm) \
+                * np.exp(1j * k / (2 * dist_nm) * (u**2 + v**2)) \
+                * wavefront \
+                * dx * dy
 
     return wavefront
 
@@ -220,8 +281,8 @@ def _far_propagate_2(grid, wavefront, lmd, z_um):
     """
     raise warnings.warn('DeprecatedWarning')
 
-    N = grid.size[1]
-    M = grid.size[2]
+    N = grid.size_nm[1]
+    M = grid.size_nm[2]
     D = N * grid.voxel_nm_y
     H = M * grid.voxel_nm_x
     f1 = wavefront
