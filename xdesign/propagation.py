@@ -125,16 +125,13 @@ def free_propagate(simulator, wavefront, dist, algorithm=None, kernel=None):
         raise ValueError('Invalid algorithm.')
 
 
-def get_kernel(simulator, wavefront, dist):
-    """
-    Get Fresnel propagation kernel. Automatically judge whether to return IR or TF kernel.
+def get_kernel(simulator, dist):
+    """Get Fresnel propagation kernel. Automatically judge whether to return IR or TF kernel.
     
     Parameters:
     -----------
     simulator : :class:`acquisition.Simulator`
         The Simulator object.
-    wavefront : ndarray
-        The wavefront array.
     dist : float
         Propagation distance in cm.
     """
@@ -144,13 +141,21 @@ def get_kernel(simulator, wavefront, dist):
     l = np.prod(simulator.size_nm)**(1. / 3)
     crit_samp = lmbda_nm * dist_nm / l
     if simulator.mean_voxel_nm > crit_samp:
-        return get_kernel_tf(simulator, wavefront, dist)
+        return get_kernel_tf(simulator, dist)
     else:
-        return get_kernel_tf(simulator, wavefront, dist)
+        return get_kernel_ir(simulator, dist)
 
 
-def get_kernel_tf(simulator, wavefront, dist):
+def get_kernel_tf(simulator, dist):
+    """Get Fresnel propagation kernel for TF algorithm.
 
+    Parameters:
+    -----------
+    simulator : :class:`acquisition.Simulator`
+        The Simulator object.
+    dist : float
+        Propagation distance in cm.
+    """
     dist_nm = dist * 1e7
     lmbda_nm = simulator.lmbda_nm
     k = 2 * PI / lmbda_nm
@@ -163,7 +168,6 @@ def get_kernel_tf(simulator, wavefront, dist):
 
 
 def propagate_tf(simulator, wavefront, dist, kernel=None):
-
     """Free space propagation using the transfer function algorithm.
 
     Parameters:
@@ -180,14 +184,24 @@ def propagate_tf(simulator, wavefront, dist, kernel=None):
     if kernel is not None:
         H = kernel
     else:
-        H = get_kernel_tf(simulator, wavefront, dist)
+        H = get_kernel_tf(simulator, dist)
     wavefront = ifftn(ifftshift(fftshift(fftn(wavefront)) * H))
 
     return wavefront
 
 
-def get_kernel_ir(simulator, wavefront, dist):
+def get_kernel_ir(simulator, dist):
 
+    """
+    Get Fresnel propagation kernel for IR algorithm.
+
+    Parameters:
+    -----------
+    simulator : :class:`acquisition.Simulator`
+        The Simulator object.
+    dist : float
+        Propagation distance in cm.
+    """
     dist_nm = dist * 1e7
     lmbda_nm = simulator.lmbda_nm
     k = 2 * PI / lmbda_nm
@@ -203,7 +217,6 @@ def get_kernel_ir(simulator, wavefront, dist):
 
 
 def propagate_ir(simulator, wavefront, dist, kernel=None):
-
     """Free space propagation using the impulse response algorithm.
 
     Parameters:

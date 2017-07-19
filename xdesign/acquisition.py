@@ -752,7 +752,7 @@ class Simulator(object):
         n_slice = self.grid_delta.shape[-1]
 
         delta_nm = self.voxel_nm[-1]
-        kernel = get_kernel(self, self.wavefront, delta_nm * 1.e-7)
+        kernel = get_kernel(self, delta_nm * 1.e-7)
         for i_slice in range(n_slice):
             print('Slice: {:d}'.format(i_slice))
             sys.stdout.flush()
