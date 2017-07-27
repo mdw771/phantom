@@ -55,7 +55,8 @@ import warnings
 import operator
 from xdesign.util import gen_mesh
 from xdesign.constants import PI
-from numpy.fft import fft2, fftn, ifftn, fftshift, ifftshift
+# from numpy.fft import fft2, fftn, ifftn, fftshift, ifftshift
+from pyfftw.interfaces.numpy_fft import fftshift, ifftshift, fftn, ifftn, fft, ifft, fft2, ifft2
 
 logger = logging.getLogger(__name__)
 
@@ -66,7 +67,9 @@ __all__ = ['free_propagate',
            'far_propagate',
            'slice_modify',
            'slice_propagate',
-           'get_kernel']
+           'get_kernel',
+           'propagate_tf',
+           'propagate_ir']
 
 
 def slice_modify(simulator, delta_slice, beta_slice, wavefront):
@@ -117,6 +120,7 @@ def free_propagate(simulator, wavefront, dist, algorithm=None, kernel=None):
         l = np.prod(simulator.size_nm)**(1. / 3)
         crit_samp = lmbda_nm * dist_nm / l
         algorithm = 'TF' if simulator.mean_voxel_nm > crit_samp else 'IR'
+        print(algorithm)
     if algorithm == 'TF':
         return propagate_tf(simulator, wavefront, dist, kernel=kernel)
     elif algorithm == 'IR':
@@ -177,7 +181,7 @@ def get_kernel_tf(simulator, dist):
     u_max = 1. / (2. * simulator.voxel_nm[0])
     v_max = 1. / (2. * simulator.voxel_nm[1])
     u, v = gen_mesh([v_max, u_max], simulator.grid_delta.shape[1:3])
-    H = np.exp(1j * k * dist_nm * np.sqrt(1 - lmbda_nm**2 * (u**2 - v**2)))
+    H = np.exp(1j * k * dist_nm * np.sqrt(1 - lmbda_nm**2 * (u**2 + v**2)))
 
     return H
 
@@ -246,14 +250,14 @@ def propagate_ir(simulator, wavefront, dist, kernel=None):
     if kernel is not None:
         H = kernel
     else:
-        H = get_kernel_ir(simulator, wavefront, dist)
+        H = get_kernel_ir(simulator, dist)
     wavefront = fft2(fftshift(wavefront))
     wavefront = ifftshift(ifftn(wavefront * H))
 
     return wavefront
 
 
-def far_propagate(simulator, wavefront, dist, pad=None):
+def far_propagate(simulator, wavefront, dist, pad=None, return_coords=False):
     """Free space propagation using product Fourier algorithm. Suitable for far
     field propagation.
 
@@ -267,12 +271,15 @@ def far_propagate(simulator, wavefront, dist, pad=None):
         Propagation distance in cm.
     """
     dist_nm = dist * 1.e7
-    warnings.warn('This function is still under construction.')
     lmbda_nm = simulator.lmbda_nm
     k = 2 * PI / lmbda_nm
 
+    wavedc = wavefront[0, 0]
+    wavefront = wavefront - wavefront[0, 0]
+
+    original_shape = wavefront.shape
     if pad is not None:
-        wavefront = np.pad(wavefront, pad, mode='edge')
+        wavefront = np.pad(wavefront, pad, mode='constant', constant_values=0)
         size_nm = np.array(wavefront.shape[:2]) * simulator.voxel_nm[:2]
     else:
         size_nm = simulator.size_nm
@@ -282,46 +289,31 @@ def far_propagate(simulator, wavefront, dist, pad=None):
     x = np.arange(xmin, xmin + size_nm[0], dx)
     y = np.arange(ymin, ymin + size_nm[1], dy)
     x, y = np.meshgrid(x, y)
-    print(x)
 
     umin, vmin = lmbda_nm * dist_nm / (-2. * (simulator.size_nm[:2] / np.array(wavefront.shape)))
     du, dv = lmbda_nm * dist_nm / simulator.size_nm[:2]
     u = np.arange(umin, -umin, du)
     v = np.arange(vmin, -vmin, dv)
-    print(u.shape)
     u, v = np.meshgrid(u, v)
-    print(u.shape, u)
 
     wavefront = wavefront * np.exp(1j * k / (2 * dist_nm) * (x**2 + y**2))
-    # wavefront = np.pad(wavefront, pad_width=512, mode='constant', constant_values=0)
     wavefront = fftshift(fft2(fftshift(wavefront)))
-    # wavefront = wavefront[512:1024, 512:1024]
     wavefront = np.exp(1j * k * dist_nm) / (1j * lmbda_nm * dist_nm) \
                 * np.exp(1j * k / (2 * dist_nm) * (u**2 + v**2)) \
                 * wavefront \
                 * dx * dy
 
-    return wavefront
+    u_max = 1. / (2. * simulator.voxel_nm[0])
+    v_max = 1. / (2. * simulator.voxel_nm[1])
+    wavedc *= np.exp(1j * k * dist_nm * np.sqrt(1 - lmbda_nm ** 2 * (u_max**2 - v_max**2)))
 
+    wavefront += wavedc
 
-def _far_propagate_2(grid, wavefront, lmd, z_um):
-    """Free space propagation using product Fourier algorithm.
-    """
-    raise warnings.warn('DeprecatedWarning')
+    if pad is not None:
+        wavefront = wavefront[pad:pad+original_shape[0], pad:pad+original_shape[1]]
 
-    N = grid.size_nm[1]
-    M = grid.size_nm[2]
-    D = N * grid.voxel_nm_y
-    H = M * grid.voxel_nm_x
-    f1 = wavefront
+    if return_coords:
+        return wavefront, (x, y)
+    else:
+        return wavefront
 
-    V = N/D
-    U = M/H
-    d = np.arange(-(N-1)/2,(N-1)/2+1,1)*D/N
-    h = np.arange(-(M-1)/2,(M-1)/2+1,1)*H/M
-    v = np.arange(-(N-1)/2,(N-1)/2+1,1)*V/N
-    u = np.arange(-(M-1)/2,(M-1)/2+1,1)*U/M
-
-    f2 = np.fft.fftshift(np.fft.fft2(f1*np.exp(-1j*2*PI/lmd*np.sqrt(z_um**2+d**2+h[:,np.newaxis]**2))))*np.exp(-1j*2*PI*z_um/lmd*np.sqrt(1.+lmd**2*(v**2+u[:,np.newaxis]**2)))/U/V/(lmd*z_um)*(-np.sqrt(1j))
-    d2,h2=v*lmd*z_um,u*lmd*z_um
-    return f2

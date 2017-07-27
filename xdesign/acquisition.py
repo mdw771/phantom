@@ -762,20 +762,6 @@ class Simulator(object):
             self.wavefront = slice_modify(self, delta_slice, beta_slice, self.wavefront)
             self.wavefront = slice_propagate(self, self.wavefront, kernel=kernel)
 
-        # slice_ls = range(n_slice)
-        # np.random.shuffle(slice_ls)
-        # for i_slice in slice_ls:
-        #     print('Slice: {:d}'.format(i_slice))
-        #     sys.stdout.flush()
-        #     delta_slice = self.grid_delta[:, :, i_slice]
-        #     beta_slice = self.grid_beta[:, :, i_slice]
-        #     self.wavefront = slice_modify(self, delta_slice, beta_slice, self.wavefront)
-        #     self.wavefront = slice_propagate(self, self.wavefront)
-
-            # s.append(np.abs(self.wavefront))
-        #
-        # dxchange.write_tiff(np.asarray(s), 'slice_animation_sphwave', dtype='float32', overwrite=True)
-
         if free_prop_dist is not None:
             logger.debug('Free propagation')
             # self.wavefront = free_propagate(self, self.wavefront, free_prop_dist)
