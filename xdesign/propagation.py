@@ -180,7 +180,7 @@ def get_kernel_tf(simulator, dist):
     k = 2 * PI / lmbda_nm
     u_max = 1. / (2. * simulator.voxel_nm[0])
     v_max = 1. / (2. * simulator.voxel_nm[1])
-    u, v = gen_mesh([v_max, u_max], simulator.grid_delta.shape[1:3])
+    u, v = gen_mesh([v_max, u_max], simulator.grid_delta.shape[0:2])
     H = np.exp(1j * k * dist_nm * np.sqrt(1 - lmbda_nm**2 * (u**2 + v**2)))
 
     return H
@@ -297,7 +297,7 @@ def far_propagate(simulator, wavefront, dist, pad=None, return_coords=False):
     u, v = np.meshgrid(u, v)
 
     wavefront = wavefront * np.exp(1j * k / (2 * dist_nm) * (x**2 + y**2))
-    wavefront = fftshift(fft2(fftshift(wavefront)))
+    wavefront = ifftshift(fft2(fftshift(wavefront)))
     wavefront = np.exp(1j * k * dist_nm) / (1j * lmbda_nm * dist_nm) \
                 * np.exp(1j * k / (2 * dist_nm) * (u**2 + v**2)) \
                 * wavefront \

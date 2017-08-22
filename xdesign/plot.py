@@ -410,13 +410,14 @@ def discrete_phantom(phantom, psize, bounding_box=[[0, 1], [0, 1]],
     image = np.squeeze(image)
 
     for child in phantom.children:
-        child_mask = overlay_mode is 'replace' or return_mask
+        child_mask = overlay_mode == 'replace' or return_mask
         child_image = discrete_phantom(child, psize, bounding_box,
                                        ratio, uniform,
                                        prop, mkwargs,
                                        overlay_mode=overlay_mode,
                                        return_mask=child_mask)
-        if overlay_mode is 'replace':
+        if overlay_mode == 'replace':
+            print('asd')
             image[child_image[..., -1] > 0] = 0
         if child_mask and return_mask is False:
             child_image = child_image[..., 0:-1]
