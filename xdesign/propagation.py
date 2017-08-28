@@ -55,6 +55,7 @@ import warnings
 import operator
 from xdesign.util import gen_mesh
 from xdesign.constants import PI
+from scipy.interpolate import interp2d
 # from numpy.fft import fft2, fftn, ifftn, fftshift, ifftshift
 from pyfftw.interfaces.numpy_fft import fftshift, ifftshift, fftn, ifftn, fft, ifft, fft2, ifft2
 
@@ -258,6 +259,81 @@ def propagate_ir(simulator, wavefront, dist, kernel=None):
 
 
 def far_propagate(simulator, wavefront, dist, pad=None, return_coords=False):
+    """
+    Modified single Fourier transform propagation suitable for all range
+    of numerical aperture. Only proper for far field propagation. 
+    Reference: 
+    S. Ruschin and Y. M. Engelberg, J. Opt. Soc. Am. A, JOSAA, vol. 21, 
+    no. 11, pp. 2135–2145, Nov. 2004.
+
+    Parameters:
+    -----------
+    simulator : :class:`acquisition.Simulator`
+        The Simulator object.
+    wavefront : ndarray
+        The wavefront array.
+    dist : float
+        Propagation distance in cm.
+    return_coords : bool
+        Whether to return the coordinates of observation plane. 
+    """
+    dist_nm = dist * 1.e7
+    lmbda_nm = simulator.lmbda_nm
+    k = 2 * PI / lmbda_nm
+    wavedc = wavefront[0, 0]
+    wavefront = wavefront - wavefront[0, 0]
+
+    original_shape = wavefront.shape
+    if pad is not None:
+        wavefront = np.pad(wavefront, pad, mode='constant', constant_values=0)
+        size_nm = np.array(wavefront.shape[:2]) * simulator.voxel_nm[:2]
+    else:
+        size_nm = simulator.size_nm
+
+    xmin, ymin = size_nm[:2] / -2.
+    dx, dy = simulator.voxel_nm[0:2]
+    x = np.arange(xmin, xmin + size_nm[0], dx)
+    y = np.arange(ymin, ymin + size_nm[1], dy)
+    x, y = np.meshgrid(x, y)
+
+    u_max = 1. / (2. * simulator.voxel_nm[0])
+    v_max = 1. / (2. * simulator.voxel_nm[1])
+    u, v = gen_mesh([v_max, u_max], simulator.grid_delta.shape[0:2])
+
+    corr_factor = np.sqrt(1 - lmbda_nm**2 * (u**2 + v**2))
+    x2 = lmbda_nm * u * dist_nm / corr_factor
+    y2 = lmbda_nm * v * dist_nm / corr_factor
+
+    r2 = np.sqrt(dist_nm**2 + x2**2 + y2**2)
+
+    wavefront = wavefront * np.exp(1j * k / (2 * dist_nm) * (x**2 + y**2))
+    wavefront = ifftshift(fft2(fftshift(wavefront)))
+    wavefront = wavefront * dist_nm / (1j * lmbda_nm * r2**2)
+    wavefront = wavefront * np.exp(1j * k * r2)
+
+    wavedc *= np.exp(1j * k * dist_nm * np.sqrt(1 - lmbda_nm ** 2 * (u_max**2 - v_max**2)))
+
+    wavefront += wavedc
+
+    if pad is not None:
+        wavefront = wavefront[pad:pad+original_shape[0], pad:pad+original_shape[1]]
+
+    # interpolation back to linear grid
+
+    f = interp2d(x2[0, :], y2[:, 0], wavefront)
+    umin, vmin = lmbda_nm * dist_nm / (-2. * (simulator.voxel_nm[:2]))
+    du, dv = lmbda_nm * dist_nm / simulator.size_nm[:2]
+    x2 = np.arange(umin, -umin, du)
+    y2 = np.arange(vmin, -vmin, dv)
+    wavefront = f(x2, y2)
+
+    if return_coords:
+        return wavefront, (x2, y2)
+    else:
+        return wavefront
+
+
+def far_propagate_low_na(simulator, wavefront, dist, pad=None, return_coords=False):
     """Free space propagation using product Fourier algorithm. Suitable for far
     field propagation.
 
@@ -269,11 +345,12 @@ def far_propagate(simulator, wavefront, dist, pad=None, return_coords=False):
         The wavefront array.
     dist : float
         Propagation distance in cm.
+    return_coords : bool
+        Whether to return the coordinates of observation plane. 
     """
     dist_nm = dist * 1.e7
     lmbda_nm = simulator.lmbda_nm
     k = 2 * PI / lmbda_nm
-
     wavedc = wavefront[0, 0]
     wavefront = wavefront - wavefront[0, 0]
 
@@ -313,7 +390,7 @@ def far_propagate(simulator, wavefront, dist, pad=None, return_coords=False):
         wavefront = wavefront[pad:pad+original_shape[0], pad:pad+original_shape[1]]
 
     if return_coords:
-        return wavefront, (x, y)
+        return wavefront, (u, v)
     else:
         return wavefront
 

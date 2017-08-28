@@ -417,7 +417,6 @@ def discrete_phantom(phantom, psize, bounding_box=[[0, 1], [0, 1]],
                                        overlay_mode=overlay_mode,
                                        return_mask=child_mask)
         if overlay_mode == 'replace':
-            print('asd')
             image[child_image[..., -1] > 0] = 0
         if child_mask and return_mask is False:
             child_image = child_image[..., 0:-1]
