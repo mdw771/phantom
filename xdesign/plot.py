@@ -557,6 +557,7 @@ def discrete_geometry(geometry, psize, ratio=9):
                                              geometry.dim))
 
     # Compute whether each pixel is contained within the geometry
+    print(geometry)
     image = geometry.contains(pixel_coords)
     image.shape = final_shape
     image = image.astype(float)

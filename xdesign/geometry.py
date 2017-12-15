@@ -1283,7 +1283,10 @@ class Rod_3d(Entity):
 
         x1 = self.x1._x
         x2 = self.x2._x
-        x0 = x._x
+        try:
+            x0 = x._x
+        except:
+            x0 = x
         ret = np.cross((x2 - x1), (x1 - x0))
         ret = np.asarray(map(np.linalg.norm, ret))
         ret = ret / np.linalg.norm((x2 - x1)) <= self.radius
