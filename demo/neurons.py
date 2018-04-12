@@ -67,7 +67,7 @@ print(connections)
 # build axons
 for connect in connections:
     connect = list(connect)
-    axon = Rod_3d(x1=Point(neuron_pos_ls[connect[0]]),
+    axon = Rod_3d(x1=Poxint(neuron_pos_ls[connect[0]]),
                   x2=Point(neuron_pos_ls[connect[1]]),
                   radius=3)
     axon_pht = Phantom(geometry=axon,

@@ -29,6 +29,7 @@ def test_model_prop_pipeline():
     air = CustomMaterial(delta=0, beta=0)
 
     try:
+        raise IOError
         grid_delta = np.load('data/sav/grid/grid_delta.npy')
         grid_beta = np.load('data/sav/grid/grid_beta.npy')
     except IOError:
@@ -70,7 +71,7 @@ def test_model_prop_pipeline():
                                                [0, 64.e-7],
                                                [0, 64.e-7]],
                                  prop=['delta', 'beta'],
-                                 ratio=1,
+                                 ratio=2,
                                  mkwargs={'energy': 5},
                                  overlay_mode='replace')
         grid_delta = grid[..., 0]
@@ -80,7 +81,7 @@ def test_model_prop_pipeline():
         np.save('grid_delta.npy', grid_delta)
         np.save('grid_beta.npy', grid_beta)
 
-    sim = Simulator(energy=25000,
+    sim = Simulator(energy=5000,
                     grid=(grid_delta, grid_beta),
                     psize=[1.e-7, 1.e-7, 1.e-7])
 

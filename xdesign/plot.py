@@ -83,6 +83,7 @@ __all__ = ['plot_phantom',
            'plot_mesh',
            'plot_polygon',
            'plot_curve',
+           'discrete_phantom_legacy',
            'discrete_phantom',
            'combine_grid',
            'discrete_geometry',
@@ -326,6 +327,90 @@ def _make_axis():
     plt.grid('on')
     plt.gca().invert_yaxis()
     return fig, axis
+
+
+def discrete_phantom_legacy(phantom, size, ratio=8, uniform=True, prop='mass_atten'):
+    """Returns discrete representation of the property function, prop, in the
+    :class:`.Phantom`. The values of overlapping Phantoms are additive.
+    Parameters
+    ----------
+    phantom: :class:`.Phantom`
+    size : scalar
+        The side length in pixels of the resulting square image.
+    ratio : scalar, optional
+        The antialiasing works by supersampling. This parameter controls
+        how many pixels in the larger representation are averaged for the
+        final representation. e.g. if ratio = 8, then the final pixel
+        values are the average of 64 pixels.
+    uniform : boolean, optional
+        When set to False, changes the way pixels are averaged from a
+        uniform weights to gaussian weigths.
+    prop : str, optional
+        The name of the property function to discretize
+    Returns
+    -------
+    image : numpy.ndarray
+        The discrete representation of the :class:`.Phantom` that is size x
+        size.
+    """
+    if size <= 0:
+        raise ValueError('size must be greater than 0.')
+    if ratio < 1:
+        raise ValueError('ratio must be at least 1.')
+    ndims = 2
+
+    # Make a higher resolution grid to sample the continuous space. Sample at
+    # the center of each pixel.
+    grid_step = 1 / size / ratio
+    _x = np.arange(0, 1, grid_step) + grid_step / 2
+    _y = np.arange(0, 1, grid_step) + grid_step / 2
+    px, py = np.meshgrid(_x, _y)
+
+    # Draw the shapes at the higher resolution.
+    image = np.zeros((size * ratio, size * ratio), dtype=np.float)
+
+    # Rasterize all geometry in the phantom.
+    image = _discrete_geometry(phantom, image, px, py, prop)
+
+    # Resample down to the desired size. Roll image so that decimation chooses
+    # from the center of each pixel.
+    if uniform:
+        image = scipy.ndimage.uniform_filter(image, ratio)
+    else:
+        image = scipy.ndimage.gaussian_filter(image, np.sqrt(ratio/2))
+    image = multiroll(image, [-ratio//2]*ndims)
+    image = image[::ratio, ::ratio]
+
+    assert(image.shape[0] == size and image.shape[1] == size)
+    return image
+
+
+def _discrete_geometry(phantom, image, px, py, prop):
+    """Draw the geometry of the phantom onto the image.
+    (px, py) are two arrays the same shape as image which hold the coordinates
+    of image pixels. Multiply the geometry of each phantom by the value of
+    phantom.prop.
+    """
+    if hasattr(phantom, prop) and phantom.geometry is not None:
+        value = getattr(phantom, prop)
+
+        size = px.shape  # is equivalent to image.shape?
+        pixel_coords = np.vstack([px.flatten(), py.flatten()]).T
+
+        logger.debug("pixel_coords: {}".format(pixel_coords))
+        logger.debug("geometry: {}".format(phantom.geometry))
+
+        new_feature = phantom.geometry.contains(pixel_coords) * value
+        logger.debug("new_feature: {}".format(new_feature))
+
+        new_feature = np.reshape(new_feature, size)
+
+        image += new_feature
+
+    for child in phantom.children:
+        image = _discrete_geometry(child, image, px, py, prop)
+
+    return image
 
 
 def discrete_phantom(phantom, psize, bounding_box=[[0, 1], [0, 1]],
