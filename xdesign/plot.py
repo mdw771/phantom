@@ -391,6 +391,7 @@ def _discrete_geometry(phantom, image, px, py, prop):
     of image pixels. Multiply the geometry of each phantom by the value of
     phantom.prop.
     """
+    print(phantom.material.mass_attenuation())
     if hasattr(phantom, prop) and phantom.geometry is not None:
         value = getattr(phantom, prop)
 
@@ -605,6 +606,7 @@ def discrete_geometry(geometry, psize, ratio=9):
 
     # Determine the coordinates of the middle of each pixel in the supersampled
     # bounding box
+    # TODO: now bounding box is absolute for 3D geometry but relative for 2D geometry
     xmin, xmax = geometry.bounding_box
     imin, imax = xmin // psize, xmax // psize + 1
 
@@ -642,7 +644,6 @@ def discrete_geometry(geometry, psize, ratio=9):
                                              geometry.dim))
 
     # Compute whether each pixel is contained within the geometry
-    print(geometry)
     image = geometry.contains(pixel_coords)
     image.shape = final_shape
     image = image.astype(float)
