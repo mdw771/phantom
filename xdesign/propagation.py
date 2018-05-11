@@ -225,10 +225,10 @@ def get_kernel_ir(simulator, dist):
     dist_nm = dist * 1e7
     lmbda_nm = simulator.lmbda_nm
     k = 2 * PI / lmbda_nm
-    xmin, ymin = np.array(simulator.size_nm)[:2] / -2.
-    dx, dy = simulator.voxel_nm[0:2]
-    x = np.arange(xmin, xmin + simulator.size_nm[0], dx)
-    y = np.arange(ymin, ymin + simulator.size_nm[1], dy)
+    ymin, xmin = np.array(simulator.size_nm)[:2] / -2.
+    dy, dx = simulator.voxel_nm[0:2]
+    x = np.arange(xmin, xmin + simulator.size_nm[1], dx)
+    y = np.arange(ymin, ymin + simulator.size_nm[0], dy)
     x, y = np.meshgrid(x, y)
     h = np.exp(1j * k * dist_nm) / (1j * lmbda_nm * dist_nm) * np.exp(1j * k / (2 * dist_nm) * (x**2 + y**2))
     H = fft2(fftshift(h)) * simulator.voxel_nm[0] * simulator.voxel_nm[1]
